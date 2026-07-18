@@ -3,25 +3,27 @@
 import { useState } from "react";
 import { saveQuizAttempt } from "@/lib/api";
 import type { AdaptiveQuiz } from "@/lib/quiz";
+import type { ConfidenceLevel } from "@/lib/misconceptions";
 
 type QuizPanelProps = {
   quiz: AdaptiveQuiz;
-  onComplete: (misses: Array<{ questionId: string; concept: string }>) => void;
+  onComplete: (result: { misses: Array<{ questionId: string; concept: string; confidence: ConfidenceLevel }>; score: number; totalQuestions: number }) => void;
 };
 
 export function QuizPanel({ quiz, onComplete }: QuizPanelProps) {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [confidence, setConfidence] = useState<Record<string, ConfidenceLevel>>({});
 
-  const canSubmit = quiz.questions.every((question) => answers[question.id] !== undefined);
+  const canSubmit = quiz.questions.every((question) => answers[question.id] !== undefined && confidence[question.id] !== undefined);
   const score = quiz.questions.filter((question) => answers[question.id] === question.correctOptionIndex).length;
   const answeredCount = Object.keys(answers).length;
 
   function submitQuiz() {
     const misses = quiz.questions
       .filter((question) => answers[question.id] !== question.correctOptionIndex)
-      .map((question) => ({ questionId: question.id, concept: question.learningObjective }));
-    onComplete(misses);
+      .map((question) => ({ questionId: question.id, concept: question.learningObjective, confidence: confidence[question.id] }));
+    onComplete({ misses, score, totalQuestions: quiz.questions.length });
     void saveQuizAttempt({ moduleId: quiz.moduleId, moduleTitle: quiz.moduleTitle, score, totalQuestions: quiz.questions.length, misses }).catch(console.error);
     setIsSubmitted(true);
   }
@@ -48,6 +50,10 @@ export function QuizPanel({ quiz, onComplete }: QuizPanelProps) {
                 {option}
               </label>
             ))}
+            <div className="confidence-picker" aria-label="Confidence before checking">
+              <span>How sure are you?</span>
+              {(["guessing", "somewhat_sure", "confident"] as ConfidenceLevel[]).map((level) => <label key={level}><input type="radio" name={`${question.id}-confidence`} checked={confidence[question.id] === level} onChange={() => setConfidence((current) => ({ ...current, [question.id]: level }))} />{level === "somewhat_sure" ? "Somewhat sure" : level[0].toUpperCase() + level.slice(1)}</label>)}
+            </div>
             {isSubmitted && (
               <p className={isCorrect ? "answer-feedback correct" : "answer-feedback incorrect"}>
                 {isCorrect ? "Correct. " : "Not quite. "}{question.explanation}

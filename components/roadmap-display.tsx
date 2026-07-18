@@ -9,7 +9,7 @@ type RoadmapDisplayProps = {
   quizzes: Record<string, AdaptiveQuiz | undefined>;
   loadingModuleId: string | null;
   onStartQuiz: (module: RoadmapModule) => Promise<void>;
-  onQuizComplete: (moduleId: string, misses: Array<{ questionId: string; concept: string }>) => void;
+  onQuizComplete: (moduleId: string, result: { misses: Array<{ questionId: string; concept: string; confidence: import("@/lib/misconceptions").ConfidenceLevel }>; score: number; totalQuestions: number }) => void;
   weakSpots: WeakSpot[];
   completedModuleIds: string[];
   onToggleModuleComplete: (moduleId: string) => void;
@@ -61,7 +61,7 @@ export function RoadmapDisplay({ roadmap, quizzes, loadingModuleId, onStartQuiz,
               {quiz && (
                 <QuizPanel
                   quiz={quiz}
-                  onComplete={(misses) => onQuizComplete(module.id, misses)}
+                  onComplete={(result) => onQuizComplete(module.id, result)}
                 />
               )}
               <TutorChat topic={roadmap.topic} module={module} weakSpots={weakSpots} />

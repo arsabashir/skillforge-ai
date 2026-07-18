@@ -3,12 +3,17 @@
 import { useState } from "react";
 import { RoadmapDisplay } from "@/components/roadmap-display";
 import { LearningDashboard } from "@/components/learning-dashboard";
+import { MasteryMap } from "@/components/mastery-map";
+import { RepairChallenge } from "@/components/repair-challenge";
+import { MisconceptionPanel } from "@/components/misconception-panel";
 import { AuthPanel } from "@/components/auth-panel";
 import { TopicForm } from "@/components/topic-form";
 import { generateQuiz, generateRoadmap } from "@/lib/api";
 import type { AdaptiveQuiz } from "@/lib/quiz";
 import type { LearningRoadmap, RoadmapModule } from "@/lib/roadmap";
 import type { WeakSpot } from "@/lib/weak-spots";
+import { createMasteryMap, type MasteryNode } from "@/lib/mastery";
+import type { ConfidenceLevel, MisconceptionFingerprint } from "@/lib/misconceptions";
 
 export default function Home() {
   const [roadmap, setRoadmap] = useState<LearningRoadmap | null>(null);
@@ -18,15 +23,20 @@ export default function Home() {
   const [loadingModuleId, setLoadingModuleId] = useState<string | null>(null);
   const [weakSpots, setWeakSpots] = useState<WeakSpot[]>([]);
   const [completedModuleIds, setCompletedModuleIds] = useState<string[]>([]);
+  const [masteryNodes, setMasteryNodes] = useState<MasteryNode[]>([]);
+  const [misconceptions, setMisconceptions] = useState<MisconceptionFingerprint[]>([]);
 
   async function handleGenerate(topic: string) {
     setError(null);
     setIsLoading(true);
     try {
-      setRoadmap(await generateRoadmap({ topic }));
+      const nextRoadmap = await generateRoadmap({ topic });
+      setRoadmap(nextRoadmap);
       setQuizzes({});
       setWeakSpots([]);
       setCompletedModuleIds([]);
+      setMasteryNodes(createMasteryMap(nextRoadmap));
+      setMisconceptions([]);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not create a roadmap.");
     } finally {
@@ -48,8 +58,19 @@ export default function Home() {
     }
   }
 
-  function handleQuizComplete(moduleId: string, misses: Array<{ questionId: string; concept: string }>) {
+  function handleQuizComplete(moduleId: string, result: { misses: Array<{ questionId: string; concept: string; confidence: ConfidenceLevel }>; score: number; totalQuestions: number }) {
+    const { misses } = result;
     setCompletedModuleIds((current) => current.includes(moduleId) ? current : [...current, moduleId]);
+    setMasteryNodes((current) => current.map((node) => {
+      if (node.moduleId !== moduleId) return node;
+      const status = misses.length === 0 || result.score / result.totalQuestions >= 0.75 ? "mastered" : "struggling";
+      return { ...node, status, evidenceCount: node.evidenceCount + 1 };
+    }));
+    const confidentMisses = misses.filter((miss) => miss.confidence === "confident");
+    if (confidentMisses.length > 0) setMisconceptions((current) => {
+      const additions = confidentMisses.map((miss) => ({ concept: miss.concept, moduleId, confidence: miss.confidence, message: "Answered incorrectly while confident - compare this idea with its closest alternative before moving on." }));
+      return [...current.filter((item) => !additions.some((addition) => addition.moduleId === item.moduleId && addition.concept === item.concept)), ...additions];
+    });
     if (misses.length === 0) return;
     const completedAt = new Date().toISOString();
     setWeakSpots((current) => {
@@ -72,6 +93,8 @@ export default function Home() {
     setCompletedModuleIds((current) => current.includes(moduleId) ? current.filter((id) => id !== moduleId) : [...current, moduleId]);
   }
 
+  const repairNode = masteryNodes.find((node) => node.status === "struggling");
+
   return (
     <main>
       <section className="hero">
@@ -84,6 +107,9 @@ export default function Home() {
       </section>
       {roadmap && <>
         <LearningDashboard roadmap={roadmap} completedModuleIds={completedModuleIds} weakSpots={weakSpots} />
+        <MasteryMap nodes={masteryNodes} />
+        <MisconceptionPanel fingerprints={misconceptions} />
+        {repairNode && <RepairChallenge concept={repairNode} onComplete={() => setMasteryNodes((current) => current.map((node) => node.id === repairNode.id ? { ...node, status: "learning" } : node))} />}
         <RoadmapDisplay roadmap={roadmap} quizzes={quizzes} loadingModuleId={loadingModuleId} onStartQuiz={handleStartQuiz} onQuizComplete={handleQuizComplete} weakSpots={weakSpots} completedModuleIds={completedModuleIds} onToggleModuleComplete={toggleModuleComplete} />
       </>}
       {weakSpots.length > 0 && (
