@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.local
+.env*.local
+npm-debug.log*
+
+.agents (2)/
+.agents (2).zip
+.agents.zip
+
+Iterator.zip
